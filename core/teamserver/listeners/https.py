@@ -58,6 +58,11 @@ class STListener(Listener):
                 'Required'      :    False,
                 'Value'         :    False
             },
+            'CallBackURls': {
+                'Description'   :   'Additional C2 Callback URLs (comma seperated)',
+                'Required'      :   False,
+                'Value'         :   ''
+            },
             'Comms': {
                 'Description'   :   'C2 Comms to use',
                 'Required'      :   True,
@@ -127,7 +132,9 @@ class STListener(Listener):
     async def key_exchange(self, GUID):
         data = await request.data
         pub_key = self.dispatch_event(events.KEX, (GUID, request.remote_addr, data))
-        return Response(pub_key, content_type='application/xml')
+        if pub_key:
+            return Response(pub_key, content_type='application/octet-stream')
+        return '', 400
 
     async def stage(self, GUID):
         stage_file = self.dispatch_event(events.ENCRYPT_STAGE, (GUID, request.remote_addr, self["Comms"]))

