@@ -6,6 +6,9 @@ verify_ssl = true
 [dev-packages]
 pylint = "*"
 ipython = "*"
+flake8 = "*"
+pytest = "*"
+shiv = "*"
 
 [packages]
 prompt-toolkit = "*"
@@ -22,6 +25,7 @@ defusedxml = "*"
 netifaces = "*"
 aiosqlite = "*"
 pypykatz = "*"
+donut-shellcode = "*"
 
 [requires]
 python_version = "3.7"
